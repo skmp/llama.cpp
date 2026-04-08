@@ -38,7 +38,7 @@ def main() -> None:
         w, h = group['width'], group['height']
         images = group['images']
 
-        video_path = os.path.join(compressed, f'{w}x{h}.mp4')
+        video_path = os.path.join(compressed, f'{w}x{h}.mkv')
         list_path = os.path.join(compressed, f'filelist_{w}x{h}.txt')
 
         # Write concat list with explicit durations

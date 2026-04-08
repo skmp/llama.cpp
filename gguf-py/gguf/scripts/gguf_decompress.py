@@ -156,7 +156,7 @@ def main() -> None:
         w, h = group['width'], group['height']
         images = group['images']
 
-        video_path = f'{w}x{h}.mp4'
+        video_path = f'{w}x{h}.mkv'
         tmp_dir = os.path.join(uncompressed, f'_tmp_{w}x{h}')
         os.makedirs(tmp_dir, exist_ok=True)
 
