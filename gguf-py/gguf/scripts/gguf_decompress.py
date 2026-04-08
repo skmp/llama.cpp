@@ -99,14 +99,16 @@ def reconstruct_tensor(tensor_info: dict, uncompressed: str) -> np.ndarray:
 
     else:
         # Multiple frames are 3D slices, per-frame vmin/vmax
+        elems_per_slice = n_elements // n_frames
         slices = []
         for s, px in enumerate(frames):
             if rotated:
                 px = px.T
             sv_min = float(vmin[s]) if isinstance(vmin, list) else float(vmin)
             sv_max = float(vmax[s]) if isinstance(vmax, list) else float(vmax)
-            slices.append(delinearize(px, sv_min, sv_max))
-        data = np.stack(slices)
+            sl = delinearize(px, sv_min, sv_max).flatten()[:elems_per_slice]
+            slices.append(sl)
+        data = np.concatenate(slices)
 
     return data.reshape(shape)
 
@@ -212,7 +214,6 @@ def main() -> None:
 
     writer.write_header_to_file()
     writer.write_kv_data_to_file()
-    writer.write_ti_data_to_file()
     writer.write_tensors_to_file(progress=True)
     writer.close()
 
