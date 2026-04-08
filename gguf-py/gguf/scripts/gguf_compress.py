@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Compress exported BMP tensor images into h265 videos.
+"""Compress exported tensor data: h265 videos for images, copy .bin passthrough files.
 
-Run from the tensor export directory (containing manifest.json and BMP images).
+Run from the tensor export directory (containing manifest.json).
 Outputs to .compressed/ subdirectory.
 """
 from __future__ import annotations
@@ -37,22 +37,30 @@ def main() -> None:
     if args.threads > 0:
         x265_params += f':pools={args.threads}'
 
+    # Copy .bin passthrough files
+    for tensor in manifest['tensors']:
+        if tensor.get('encoding') == 'bin':
+            lid = tensor['layer_id']
+            src = f"{lid:06d}.bin"
+            if os.path.exists(src):
+                shutil.copy2(src, os.path.join(compressed, src))
+                print(f"Copying {src} (passthrough)")
+
+    # Encode image groups as videos
     for group in manifest['image_groups']:
         w, h = group['width'], group['height']
-        color = group.get('color', 'gray')
+        ch = group.get('channel', 'gray')
         images = group['images']
 
-        video_path = os.path.join(compressed, f'{w}x{h}_{color}.mkv')
-        list_path = os.path.join(temp, f'filelist_{w}x{h}_{color}.txt')
+        video_path = os.path.join(compressed, f'{w}x{h}_{ch}.mkv')
+        list_path = os.path.join(temp, f'filelist_{w}x{h}_{ch}.txt')
 
-        # Write concat list with explicit durations
         with open(list_path, 'w', encoding='utf-8') as f:
             for img in images:
                 f.write(f"file '../../{img}'\n")
                 f.write("duration 1\n")
 
-        pix_fmt = 'gbrp' if color == 'rgb' else 'gray'
-        print(f"Compressing {len(images)} frame(s) ({w}x{h}, {color}) -> {video_path}")
+        print(f"Compressing {len(images)} frame(s) ({w}x{h}) -> {video_path}")
         subprocess.run([
             'ffmpeg', '-y',
             '-f', 'concat', '-safe', '0', '-i', list_path,
@@ -60,12 +68,12 @@ def main() -> None:
             '-c:v', 'libx265', '-preset', args.preset,
             '-crf', str(args.crf),
             '-x265-params', x265_params,
-            '-pix_fmt', pix_fmt, video_path,
+            '-pix_fmt', 'gray', video_path,
         ], check=True)
 
     shutil.rmtree(temp, ignore_errors=True)
 
-    # Copy manifest and metadata into .compressed so decompress.py can work standalone
+    # Copy manifest and metadata
     shutil.copy2('manifest.json', os.path.join(compressed, 'manifest.json'))
     if os.path.exists('metadata.gguf'):
         shutil.copy2('metadata.gguf', os.path.join(compressed, 'metadata.gguf'))

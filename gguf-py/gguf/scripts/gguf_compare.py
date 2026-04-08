@@ -101,6 +101,7 @@ def main() -> None:
     shared_t = sorted(set(a_tensors.keys()) & set(b_tensors.keys()))
     shape_mismatch = 0
     type_mismatch = 0
+    data_mismatch = 0
 
     for name in shared_t:
         ta, tb = a_tensors[name], b_tensors[name]
@@ -118,6 +119,39 @@ def main() -> None:
     else:
         print(f"  {shape_mismatch} shape mismatches, {type_mismatch} type mismatches, "
               f"{len(missing_t)} missing, {len(extra_t)} extra")
+    print()
+
+    # --- Compare tensor DATA (first 5 tensors) ---
+    print("=== Tensor Data (first 5) ===")
+    from gguf import dequantize
+    for name in shared_t[:5]:
+        ta, tb = a_tensors[name], b_tensors[name]
+        try:
+            da = dequantize(ta.data, ta.tensor_type).astype(np.float32).flatten()
+            db = dequantize(tb.data, tb.tensor_type).astype(np.float32).flatten()
+            n = min(len(da), len(db))
+            da, db = da[:n], db[:n]
+            if n == 0:
+                print(f"  {name}: EMPTY")
+                continue
+            diff = np.abs(da - db)
+            max_diff = float(diff.max())
+            mean_diff = float(diff.mean())
+            # Check if data is just transposed (compare sorted values)
+            corr = np.corrcoef(da[:1000], db[:1000])[0, 1] if n >= 1000 else float('nan')
+            exact = np.array_equal(da, db)
+            print(f"  {name}: exact={exact}, max_diff={max_diff:.6g}, mean_diff={mean_diff:.6g}, "
+                  f"corr={corr:.6f}, a[:5]={da[:5]}, b[:5]={db[:5]}")
+            if not exact:
+                data_mismatch += 1
+        except Exception as e:
+            print(f"  {name}: ERROR: {e}")
+            data_mismatch += 1
+
+    if data_mismatch == 0:
+        print(f"  Data matches for checked tensors!")
+    else:
+        print(f"  {data_mismatch} data mismatches")
 
 
 if __name__ == '__main__':
