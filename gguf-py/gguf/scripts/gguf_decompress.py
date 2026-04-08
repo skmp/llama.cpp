@@ -163,7 +163,7 @@ def main() -> None:
         print(f"Extracting {len(images)} frame(s) from {video_path}...")
         subprocess.run([
             'ffmpeg', '-y', '-i', video_path,
-            '-r', '1', '-vsync', '0',
+            '-fps_mode', 'passthrough',
             '-pix_fmt', 'gray',
             os.path.join(tmp_dir, 'frame_%06d.bmp'),
         ], check=True)
