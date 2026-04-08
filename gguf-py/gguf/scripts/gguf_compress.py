@@ -17,6 +17,7 @@ import sys
 def main() -> None:
     parser = argparse.ArgumentParser(description="Compress tensor BMP images into h265 videos")
     parser.add_argument("--crf", type=int, default=30, help="CRF quality (0=lossless, 51=worst, default: 30)")
+    parser.add_argument("--preset", type=str, default="veryfast", help="x265 preset (ultrafast..placebo, default: veryfast)")
     parser.add_argument("--threads", type=int, default=0, help="Encoding threads (0=auto, default: 0)")
     args = parser.parse_args()
 
@@ -54,7 +55,7 @@ def main() -> None:
             'ffmpeg', '-y',
             '-f', 'concat', '-safe', '0', '-i', list_path,
             '-r', '1',
-            '-c:v', 'libx265', '-preset', 'veryslow',
+            '-c:v', 'libx265', '-preset', args.preset,
             '-crf', str(args.crf),
             '-x265-params', x265_params,
             '-pix_fmt', 'gray', video_path,
