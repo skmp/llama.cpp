@@ -17,7 +17,7 @@ from collections import defaultdict
 
 import numpy as np
 
-from gguf import GGUFWriter, GGUFValueType
+from gguf import GGUFReader, GGUFWriter, GGUFValueType
 from gguf.constants import GGMLQuantizationType
 
 
@@ -113,27 +113,24 @@ def reconstruct_tensor(tensor_info: dict, uncompressed: str) -> np.ndarray:
     return data.reshape(shape)
 
 
-# --- Metadata writing ---
+# --- Metadata copying ---
 
-def write_metadata(writer: GGUFWriter, metadata: list[dict]) -> None:
-    for entry in metadata:
-        key = entry['key']
-        type_str = entry['type']
-        value = entry['value']
-
+def copy_metadata(meta_path: str, writer: GGUFWriter) -> None:
+    """Copy all metadata from a metadata-only GGUF into the writer (lossless)."""
+    reader = GGUFReader(meta_path, 'r')
+    for field in reader.fields.values():
+        if field.name == "general.architecture" or field.name.startswith('GGUF.'):
+            continue
+        if not field.types:
+            continue
+        val_type = field.types[0]
+        sub_type = field.types[-1] if val_type == GGUFValueType.ARRAY else None
         try:
-            if type_str.startswith('ARRAY:'):
-                elem_name = type_str[6:]
-                vtype = GGUFValueType.ARRAY
-                sub_type = GGUFValueType[elem_name]
-                if not value:
-                    continue
-                writer.add_key_value(key, value, vtype, sub_type=sub_type)
-            else:
-                vtype = GGUFValueType[type_str]
-                writer.add_key_value(key, value, vtype)
+            value = field.contents()
+            if value is not None:
+                writer.add_key_value(field.name, value, val_type, sub_type=sub_type)
         except Exception as e:
-            print(f"  Warning: skipping metadata '{key}': {e}", file=sys.stderr)
+            print(f"  Warning: skipping metadata '{field.name}': {e}", file=sys.stderr)
 
 
 # --- Main ---
@@ -183,33 +180,39 @@ def main() -> None:
     arch = manifest.get('architecture', '')
     writer = GGUFWriter(args.output, arch)
 
-    # Write metadata
-    write_metadata(writer, manifest.get('metadata', []))
+    # Copy metadata from binary GGUF (lossless)
+    if os.path.exists('metadata.gguf'):
+        copy_metadata('metadata.gguf', writer)
+    else:
+        print("Warning: metadata.gguf not found, output will have no metadata", file=sys.stderr)
 
     # Reconstruct and write tensors
+    # Manifest stores shapes in GGML order (innermost dim first).
+    # GGUFWriter expects numpy order (outermost dim first) and reverses internally.
     for tensor_info in manifest['tensors']:
         name = tensor_info['name']
-        shape = tensor_info['shape']
+        ggml_shape = tensor_info['shape']
+        np_shape = list(reversed(ggml_shape))  # GGML → numpy order
         tensor_type_name = tensor_info['tensor_type']
 
-        print(f"Reconstructing {name} ({tensor_type_name}, {shape})...")
+        print(f"Reconstructing {name} ({tensor_type_name}, {ggml_shape})...")
         data = reconstruct_tensor(tensor_info, uncompressed)
 
         qtype = GGMLQuantizationType[tensor_type_name]
 
         if qtype == GGMLQuantizationType.F32:
-            writer.add_tensor(name, data.astype(np.float32), raw_shape=shape, raw_dtype=qtype)
+            writer.add_tensor(name, data.astype(np.float32), raw_shape=np_shape, raw_dtype=qtype)
         elif qtype == GGMLQuantizationType.F16:
-            writer.add_tensor(name, data.astype(np.float16), raw_shape=shape, raw_dtype=qtype)
+            writer.add_tensor(name, data.astype(np.float16), raw_shape=np_shape, raw_dtype=qtype)
         else:
             # Quantized types: try to re-quantize, fall back to F16
             try:
                 from gguf.quants import quantize as gguf_quantize
                 quantized = gguf_quantize(data.astype(np.float32).flatten(), qtype)
-                writer.add_tensor(name, quantized, raw_shape=shape, raw_dtype=qtype)
+                writer.add_tensor(name, quantized, raw_shape=np_shape, raw_dtype=qtype)
             except (NotImplementedError, Exception) as e:
                 print(f"  Can't re-quantize to {tensor_type_name}, using F16: {e}", file=sys.stderr)
-                writer.add_tensor(name, data.astype(np.float16), raw_shape=shape,
+                writer.add_tensor(name, data.astype(np.float16), raw_shape=np_shape,
                                   raw_dtype=GGMLQuantizationType.F16)
 
     writer.write_header_to_file()

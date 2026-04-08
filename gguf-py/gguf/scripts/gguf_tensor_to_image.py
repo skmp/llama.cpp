@@ -15,7 +15,7 @@ from pathlib import Path
 import numpy as np
 import numpy.typing as npt
 
-from gguf import GGUFReader, GGUFValueType, ReaderTensor, dequantize
+from gguf import GGUFReader, GGUFValueType, GGUFWriter, ReaderTensor, dequantize
 
 logger = logging.getLogger("gguf-tensor-to-image")
 
@@ -216,47 +216,33 @@ def export_tensor(tensor: ReaderTensor, output_dir: str, layer_id: int) -> dict:
 
 # --- Metadata serialization ---
 
-def _to_json(val):
-    if isinstance(val, (np.integer, np.bool_)):
-        return int(val)
-    if isinstance(val, np.floating):
-        return float(val)
-    if isinstance(val, bytes):
-        return val.decode('utf-8', errors='replace')
-    if isinstance(val, np.ndarray):
-        return val.tolist()
-    return val
-
-
-def serialize_metadata(reader: GGUFReader) -> tuple[str, list[dict]]:
-    """Returns (architecture, metadata_entries)."""
-    arch = ""
-    entries = []
+def get_architecture(reader: GGUFReader) -> str:
     for name, field in reader.fields.items():
-        if name.startswith('GGUF.'):
+        if name == "general.architecture":
+            return str(field.contents())
+    return ""
+
+
+def save_metadata_gguf(reader: GGUFReader, arch: str, output_path: str) -> None:
+    """Save all metadata as a tensor-less GGUF file (lossless binary round-trip)."""
+    writer = GGUFWriter(output_path, arch)
+    for field in reader.fields.values():
+        if field.name == "general.architecture" or field.name.startswith('GGUF.'):
             continue
         if not field.types:
             continue
-
-        if name == "general.architecture":
-            arch = str(field.contents())
-            # GGUFWriter sets this from constructor, skip
-            continue
-
-        main_type = field.types[0]
+        val_type = field.types[0]
+        sub_type = field.types[-1] if val_type == GGUFValueType.ARRAY else None
         try:
-            if main_type == GGUFValueType.ARRAY:
-                elem_type = field.types[-1]
-                value = field.contents()
-                if isinstance(value, list):
-                    value = [_to_json(v) for v in value]
-                entries.append({"key": name, "type": f"ARRAY:{elem_type.name}", "value": value})
-            else:
-                entries.append({"key": name, "type": main_type.name, "value": _to_json(field.contents())})
+            value = field.contents()
+            if value is not None:
+                writer.add_key_value(field.name, value, val_type, sub_type=sub_type)
         except Exception as e:
-            logger.warning(f"Skipping metadata '{name}': {e}")
-
-    return arch, entries
+            logger.warning(f"Skipping metadata '{field.name}': {e}")
+    writer.write_header_to_file()
+    writer.write_kv_data_to_file()
+    writer.close()
+    logger.info(f'* Written {output_path}')
 
 
 # --- Image grouping ---
@@ -307,9 +293,10 @@ def main() -> None:
     os.makedirs(output_dir, exist_ok=True)
     logger.info(f'* Output directory: {output_dir}')
 
-    # Serialize metadata
-    arch, metadata = serialize_metadata(reader)
+    # Save metadata as binary GGUF (lossless round-trip)
+    arch = get_architecture(reader)
     logger.info(f'* Architecture: {arch}')
+    save_metadata_gguf(reader, arch, os.path.join(output_dir, 'metadata.gguf'))
 
     # Export tensors
     tensor_manifests = []
@@ -338,7 +325,6 @@ def main() -> None:
 
     manifest = {
         "architecture": arch,
-        "metadata": metadata,
         "tensors": tensor_manifests,
         "image_groups": image_groups,
     }

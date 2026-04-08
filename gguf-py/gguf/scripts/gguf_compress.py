@@ -63,8 +63,10 @@ def main() -> None:
 
     shutil.rmtree(temp, ignore_errors=True)
 
-    # Copy manifest into .compressed so decompress.py can work standalone
+    # Copy manifest and metadata into .compressed so decompress.py can work standalone
     shutil.copy2('manifest.json', os.path.join(compressed, 'manifest.json'))
+    if os.path.exists('metadata.gguf'):
+        shutil.copy2('metadata.gguf', os.path.join(compressed, 'metadata.gguf'))
 
     print(f"Done. Compressed output in {compressed}/")
     print(f"To reconstruct: cd {compressed} && python -m gguf.scripts.gguf_decompress")
