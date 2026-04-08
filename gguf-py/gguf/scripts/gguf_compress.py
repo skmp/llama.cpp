@@ -28,7 +28,9 @@ def main() -> None:
         manifest = json.load(f)
 
     compressed = '.compressed'
+    temp = os.path.join(compressed, '.temp')
     os.makedirs(compressed, exist_ok=True)
+    os.makedirs(temp, exist_ok=True)
 
     x265_params = f'crf={args.crf}:keyint=10'
     if args.threads > 0:
@@ -39,12 +41,12 @@ def main() -> None:
         images = group['images']
 
         video_path = os.path.join(compressed, f'{w}x{h}.mkv')
-        list_path = os.path.join(compressed, f'filelist_{w}x{h}.txt')
+        list_path = os.path.join(temp, f'filelist_{w}x{h}.txt')
 
         # Write concat list with explicit durations
         with open(list_path, 'w', encoding='utf-8') as f:
             for img in images:
-                f.write(f"file '../{img}'\n")
+                f.write(f"file '../../{img}'\n")
                 f.write("duration 1\n")
 
         print(f"Compressing {len(images)} frame(s) ({w}x{h}) -> {video_path}")
@@ -56,6 +58,8 @@ def main() -> None:
             '-x265-params', x265_params,
             '-pix_fmt', 'gray', video_path,
         ], check=True)
+
+    shutil.rmtree(temp, ignore_errors=True)
 
     # Copy manifest into .compressed so decompress.py can work standalone
     shutil.copy2('manifest.json', os.path.join(compressed, 'manifest.json'))
