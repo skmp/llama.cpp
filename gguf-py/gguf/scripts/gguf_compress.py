@@ -32,7 +32,7 @@ def main() -> None:
     os.makedirs(compressed, exist_ok=True)
     os.makedirs(temp, exist_ok=True)
 
-    x265_params = f'crf={args.crf}:keyint=10'
+    x265_params = 'keyint=-1:scenecut=0'
     if args.threads > 0:
         x265_params += f':pools={args.threads}'
 
@@ -55,6 +55,7 @@ def main() -> None:
             '-f', 'concat', '-safe', '0', '-i', list_path,
             '-r', '1',
             '-c:v', 'libx265', '-preset', 'veryslow',
+            '-crf', str(args.crf),
             '-x265-params', x265_params,
             '-pix_fmt', 'gray', video_path,
         ], check=True)
