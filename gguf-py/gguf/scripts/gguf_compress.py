@@ -51,6 +51,7 @@ def main() -> None:
         subprocess.run([
             'ffmpeg', '-y',
             '-f', 'concat', '-safe', '0', '-i', list_path,
+            '-r', '1',
             '-c:v', 'libx265', '-preset', 'veryslow',
             '-x265-params', x265_params,
             '-pix_fmt', 'gray', video_path,
