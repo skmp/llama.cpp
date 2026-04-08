@@ -39,10 +39,11 @@ def main() -> None:
 
     for group in manifest['image_groups']:
         w, h = group['width'], group['height']
+        color = group.get('color', 'gray')
         images = group['images']
 
-        video_path = os.path.join(compressed, f'{w}x{h}.mkv')
-        list_path = os.path.join(temp, f'filelist_{w}x{h}.txt')
+        video_path = os.path.join(compressed, f'{w}x{h}_{color}.mkv')
+        list_path = os.path.join(temp, f'filelist_{w}x{h}_{color}.txt')
 
         # Write concat list with explicit durations
         with open(list_path, 'w', encoding='utf-8') as f:
@@ -50,7 +51,8 @@ def main() -> None:
                 f.write(f"file '../../{img}'\n")
                 f.write("duration 1\n")
 
-        print(f"Compressing {len(images)} frame(s) ({w}x{h}) -> {video_path}")
+        pix_fmt = 'gbrp' if color == 'rgb' else 'gray'
+        print(f"Compressing {len(images)} frame(s) ({w}x{h}, {color}) -> {video_path}")
         subprocess.run([
             'ffmpeg', '-y',
             '-f', 'concat', '-safe', '0', '-i', list_path,
@@ -58,7 +60,7 @@ def main() -> None:
             '-c:v', 'libx265', '-preset', args.preset,
             '-crf', str(args.crf),
             '-x265-params', x265_params,
-            '-pix_fmt', 'gray', video_path,
+            '-pix_fmt', pix_fmt, video_path,
         ], check=True)
 
     shutil.rmtree(temp, ignore_errors=True)
